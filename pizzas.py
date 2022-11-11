@@ -1,5 +1,86 @@
 import pandas as pd
+import calendar
 import re
+from statistics import mode 
+
+
+
+def extract():
+    data = {}
+    csvs = ['pizzas.csv', 'pizza_types.csv', 'orders.csv', 'order_details.csv', 'data_dictionary.csv']
+    names = ['pizzas', 'pizza_types', 'orders', 'order_details', 'data_dictionary']
+    
+    for file in csvs:
+        index = csvs.index(file)
+        df = pd.read_csv(file, encoding='latin')
+        data[names[index]] = df
+  
+    return data
+
+def pasar_str(lista):
+
+    semana = []
+    
+    for date in lista:
+        cadena = ''
+        
+        if int(date.day) < 10 :
+            dia = '0'+ str(date.day)
+        else:
+            dia = str(date.day)
+
+        if int(date.month) < 10 :
+            mes = '0' + str(date.month)
+        else:
+            mes = str(date.month)
+            
+        
+        cadena += dia + '/' + mes + '/' + str(date.year)
+        semana.append(cadena)
+
+    return semana
+
+def crear_calendar():
+
+    cal = calendar.Calendar()
+    cal.setfirstweekday(0)
+    año_tmp = []
+    año_fin = {}
+    count = 1
+
+    for mes in range(1,13):
+
+        sem_list = cal.monthdatescalendar(2015,mes)
+
+        for semana in sem_list:
+
+            sem_final = pasar_str(semana)
+
+            año_tmp.append(sem_final)
+    
+    '''
+    Quitamos la primera y última semana del año ya que contienen
+    datos de otros años y, por tanto, no son comparables las modas
+    a calcular del resto de semanas
+    '''
+    año_tmp.pop(0)
+    año_tmp.pop(-1)
+
+
+    for index in range(0,len(año_tmp)):
+
+        if index != len(año_tmp)-1:
+
+            if año_tmp[index] != año_tmp[index+1]:
+
+                año_fin[count] = año_tmp[index]
+                count += 1
+
+    '''
+    for key in año_fin.keys():
+        print(f' {key} -> {año_fin[key]}')
+    '''      
+    return año_fin
 
 def create_df(names,columns):
 
@@ -9,239 +90,191 @@ def create_df(names,columns):
 
     return df
 
-def extract():
-    
-    df_pizzas = pd.read_csv('pizzas.csv', encoding='latin')
-    df_ptypes= pd.read_csv('pizza_types.csv', encoding='latin')
-    df_orders = pd.read_csv('orders.csv', encoding='latin')
-    df_odetails = pd.read_csv('order_details.csv', encoding='latin')
-    df_dict = pd.read_csv('data_dictionary.csv', encoding='latin')
-    
 
-    return df_pizzas,df_ptypes,df_orders,df_odetails,df_dict
-
-def transform(df_pizzas,df_ptypes,df_orders,df_odetails,df_dict):
+def transform(data,año):
     '''
-    Vamos a tomar como base la última semana completa del dataset de pedidos, es decir, la 
-    semana del 21 al 27 de diciembre de 2015 (ambos incluidos)
-    
-    '''
+    Vamos a analizar los datos dados de la siguiente manera:
+    Analizaremos los pedidos por semanas, calculando para cada una de ellas el número de pizzas 
+    pedidas por cada tipo. Posteriormente, calcularemos la moda de entre los valores calculados para cada pizza
+    y así elaboraremos nuestra predicción semanal
 
-    ## Saco los order_id de los orders de la semana a estudiar
-
-    filas = []
-    chosen_week = [f'2{x}/12/2015' for x in range(1,8)]
-    
-
-    for i in range(len(df_orders['date'])):
-        if df_orders['date'][i] in chosen_week :
-            filas.append(i)
-
-    df_week = df_orders.iloc[filas[0] : filas[len(filas)-1]]
-    orders_id = list(df_week['order_id'])
-    
-
-    ## Saco los tipos de pizza generales y sus ingredientes ( coinciden en índice ) 
-
-    p_types = list(df_ptypes['pizza_type_id'])
-
-
-    p_ingredients = []
-    temporal_ingredients = list(df_ptypes['ingredients'])
-
-    for lista in temporal_ingredients:
-        ingredientes = re.split(', ', lista)
-        p_ingredients.append(ingredientes)
-
-    ## Creo un diccionario con los tipos de pizza que incluyan el tamaño de esta
-
-    p_types_tam_dict = {}
-
-    for type in df_pizzas['pizza_id']:
-        p_types_tam_dict[type] = 0
-    
-    
-    ## Saco el número de pizzas de cada tipo pedidas en las fechas seleccionadas y las meto en el diccionario
-    
-    for a in range(len(df_odetails['order_id'])):
-
-        if df_odetails['order_id'][a] in orders_id:
-
-            for pizza in p_types_tam_dict.keys():
-
-                if df_odetails['pizza_id'][a] == pizza:
-                    
-                    p_types_tam_dict[pizza] += df_odetails['quantity'][a]
-
-
-    ''' 
-    En este punto tenemos :
-
-    orders_id -> Lista con los orders_id de los pedidos de la semana
-    p_types -> Lista con los tipos de pizza generales
-    p_ingredients -> Lista de listas en las que tenemos los ingredientes por tipo genérico de pizza
-    p_types_tam_dict -> Diccionario con el número de pizzas por tipo y tamaño pedidas en el periodo estudiado
-
-    Para simplificar el acceso al número de pizzas creamos diferentes columnas para unirlo en un único dataset
-
-    columna1 = p_types
-    columna2 = ingredientes por tipo
-    columna3 = cantidad de S
-    columna4 = cantidad de m
-    columna5 = cantidad de l
-    columna6 = cantidad de xl
-    columna7 = cantidad de xxl
-    columna8 = cantidad total
+    En cuanto a la separación por semanas, partimos de la base de que conocemos
+    que el 1 de enero de 2015(fecha de inicio de los datos) es jueves, por lo que comenzaremos a tener en cuenta 
+    semanas completas desde el día 5 (lunes, incluido)
 
     '''
 
-    cantidad_s = []
-    cantidad_m = []
-    cantidad_l = []
-    cantidad_xl = []
-    cantidad_xxl = []
+    # Cargamos datos
     
-    listas_cant = [cantidad_s,cantidad_m,cantidad_l,cantidad_xl,cantidad_xxl]
+    df_types = data['pizza_types']
+    df_orders = data['orders']
+    df_odetails = data['order_details']
 
-    for type in p_types:
+    semanas = list(año.values())
 
-        tams_p = [0 for x in range(0,5)]                        # Lo creo para que se añada un 0 a las listas en las que no haya un dterminado tamaño para una pizza
+    # Creamos el diccionario por tipo de pizzas para guardar las modas por semanas en una lista
 
-        for p_tamaño in p_types_tam_dict.keys():
+    modas_pizzas={}
 
-            if re.findall(type,p_tamaño) == [type]:
+    for tipo in df_types['pizza_type_id']:
+        modas_pizzas[tipo] = [0 for x in range(0,len(semanas))]
 
-                tamaño = re.findall('[a-z]+$',p_tamaño)
-                #print(f'{p_tamaño} --> Tamaño: {tamaño}')
+    
+    # Hacemos los cálculos para cada semana
+
+    for sem_index in range(0,len(semanas)):
+        semana = semanas[sem_index]
+        order_ids = []
+
+        for index in range(0,len(df_orders['order_id'])):
+
+            if df_orders['date'][index] in semana:
+
+                order_ids.append(df_orders['order_id'][index])
+        
+        # Ahora obtendremos las cantidades pedidas por pizzas
+
+        for index in range(0,len(df_odetails['order_id'])):
+
+            if df_odetails['order_id'][index] in order_ids:
+
+                '''
+                Asumimos las siguientes ponderaciones para tener en cuenta los tamaños 
+                en el número de pizzas pedidas por tipo:
+
+                Si se pide una pizza de tamaño s -> El nº de pizzas pedidas aumenta en 1
+                Si se pide una pizza de tamaño m -> El nº de pizzas pedidas aumenta en 1,5
+                Si se pide una pizza de tamaño l -> El nº de pizzas pedidas aumenta en 2
+                Si se pide una pizza de tamaño xl -> El nº de pizzas pedidas aumenta en 2,5
+                Si se pide una pizza de tamaño xxl -> El nº de pizzas pedidas aumenta en 3
+
+                Para calcular la moda posteriormente aplicaremos el casteo a int
+                
+                '''
+                pizza = str(df_odetails['pizza_id'][index])
+
+                tamaño = re.findall('[a-z]+$',pizza)
+
+                separador = '_' + tamaño[0]
+
+                pizza_datos = re.split(separador+'$' , pizza )
+                pizza_filtrada = pizza_datos[0]
 
                 if tamaño[0] == 's':
-                    cantidad_s.append(p_types_tam_dict[p_tamaño])
-                    tams_p[0] +=1
-                    
+                    (modas_pizzas[pizza_filtrada])[sem_index] += 1
+
                 elif tamaño[0] == 'm':
-                    cantidad_m.append(p_types_tam_dict[p_tamaño])
-                    tams_p[1] +=1
-
+                    (modas_pizzas[pizza_filtrada])[sem_index] += 2
+                    
                 elif tamaño[0] == 'l':
-                    cantidad_l.append(p_types_tam_dict[p_tamaño])
-                    tams_p[2] +=1
-
+                    (modas_pizzas[pizza_filtrada])[sem_index] += 3
+                    
                 elif tamaño[0] == 'xl':
-                    cantidad_xl.append(p_types_tam_dict[p_tamaño])
-                    tams_p[3] +=1
-
+                    (modas_pizzas[pizza_filtrada])[sem_index] += 4
+                    
                 elif tamaño[0] == 'xxl':
-                    cantidad_xxl.append(p_types_tam_dict[p_tamaño])
-                    tams_p[4] +=1
+                    (modas_pizzas[pizza_filtrada])[sem_index] += 5 
 
-        # Voy a gestionar que todas las listas tengan la misma longitud 
-        # de manera que si no se ha añadido un valor a la lista de un tamaño
-        # porque no exista dicho tamaño para la pizza, añado a la lista de ese tamaño un 0
-        # para que la longitud se mantenga igual
-        
-        
-        for d in range(0,len(tams_p)):                                  
-            if tams_p[d] == 0:
-                listas_cant[d].append(0)
+    # Calculamos las modas anuales de cada pizza
+    modas = []
+    for value in modas_pizzas.values():
+        moda = mode(value)
+        modas.append(moda)
 
-
-    # Creamos cantidad_total como suma de las otras columnas
-
+    # Trabajamos en la creación del dataframe que elaboraremos junto a la predicción
+    tipos = list(df_types['pizza_type_id'])
     
-    ## Creo el dataframe con las columnas creadas
 
-    names = ['Pizzas','Ingredientes','Cantidades S','Cantidades M','Cantidades L','Cantidades XL','Cantidades XXL']
-    columns = [p_types,p_ingredients,cantidad_s, cantidad_m,cantidad_l, cantidad_xl,cantidad_xxl]
-    df_procesado = create_df(names,columns)
-   
-    print(df_procesado)
+    names = ['Tipo_pizza' , 'Moda_anual' ]
+    columns = [tipos, modas]
 
-    return df_procesado
+    # Sacamos los valores por semanas
 
-def load(df_procesado):
+    for index in range(0,len(semanas)):
+        semana = []
+        for key in modas_pizzas.keys():
+            semana.append(int(modas_pizzas[key][index]))
+
+        names.append(f'Semana {index}')
+        columns.append(semana)
+
+    df = create_df(names,columns)
+
+    return df,tipos
+
+def load(df,tipos):
 
     '''
-    Voy a crear una columna que sume la cantidad de ingredientes necesarios por tipo de pizza
-    Vamos a asumir que por cada tamaño añadimos x ingredientes:
-    S -> x= 1
-    M -> x= 1,5
-    L -> x= 2
-    XL -> x= 2,5
-    XXL -> x= 3
+    Vamos a calcular la predicción de ingredientes para Maeven Pizzas 
+    basándonos en que, semanalmente, debería pedir los ingredientes 
+    que sirven para hacer el número de pizzas de cada tipo que indica 
+    la moda de dicho tipo.
 
+    Para ello primero extraemos los ingredientes a un diccionario con
+    su tipo de pizza como clave y luego multiplicamos por la moda de cada
+    tipo. 
+
+    Finalmente, crearemos un nuevo dataframe que incluya la predicción
     '''
-    cantidad_total = 1*df_procesado['Cantidades S'] + (1.5)*df_procesado['Cantidades M'] + (2)*df_procesado['Cantidades L'] + (2.5)*df_procesado['Cantidades XL'] + (3)*df_procesado['Cantidades XXL']
 
-    df_procesado['Cantidad a pedir (ponderada)'] = cantidad_total
-    #print(df_procesado)
+    ing_por_tipos = data['pizza_types']['ingredients']
 
-    ## Buscamos crear un diccionario con cantidad por ingredientes
-    ingredientes_dict = {}
+    ing_dict = {}
     mozzarella = 'Mozzarella Cheese'
     t_sauce = 'Tomato Sauce'
 
-    ingredientes_dict[mozzarella] = 0
-    ingredientes_dict[t_sauce] = 0
+    ing_dict[mozzarella] = 0
+    ing_dict[t_sauce] = 0
 
-    for index in range(0,len(df_procesado['Ingredientes'])):
-
+    for index in range(len(tipos)):
         not_sauce = 0
-
-        lista = df_procesado['Ingredientes'][index]
+        lista = re.split(', ',ing_por_tipos[index])
 
         for ingrediente in lista:
-            
+                
             if re.search('sauce', ingrediente, re.I):
-
                 not_sauce = 1
 
-            if ingrediente not in ingredientes_dict.keys():
-
-                ingredientes_dict[ingrediente] = df_procesado['Cantidad a pedir (ponderada)'][index]
+            if ingrediente not in ing_dict.keys():
+                ing_dict[ingrediente] = df['Moda_anual'][index]
 
             else:
+                ing_dict[ingrediente] += df['Moda_anual'][index]
 
-                ingredientes_dict[ingrediente] += df_procesado['Cantidad a pedir (ponderada)'][index]
-
-
-        # Controlamos el hecho de que todas lleven mozzarella y salsa de tomate (si no se especifica otra)
+            # Controlamos el hecho de que todas lleven mozzarella y salsa de tomate (si no se especifica otra)
 
         if mozzarella not in lista:
-            ingredientes_dict[mozzarella] += df_procesado['Cantidad a pedir (ponderada)'][index]
+            ing_dict['Mozzarella Cheese'] += df['Moda_anual'][index]
 
         if not_sauce == 0:
-            ingredientes_dict[t_sauce] += df_procesado['Cantidad a pedir (ponderada)'][index]
-
-
-    # Creo un dataset a partir del diccionario que acabo de crear para presentárselo al cliente 
+            ing_dict['Tomato Sauce'] += df['Moda_anual'][index]
 
     names_i = ['Ingredientes','Unidades a comprar']
-    columns_i = [ingredientes_dict.keys(),ingredientes_dict.values()]
-    df_ingredients = create_df(names_i,columns_i)
+    columns_i = [ing_dict.keys(),ing_dict.values()]
 
-    print(df_ingredients)
+    df_recom = create_df(names_i,columns_i)
+    print(df_recom)
 
+    df_recom.to_csv('recomendacion_ingredientes.csv')
+    df.to_csv('analisis_pedidos_semanales.csv')
 
-    # Guardo los dtaframes en csvs para que sea de facil acceso para el cliente
-
-    df_ingredients.to_csv('estimacion_ingredientes.csv')
-    df_procesado.to_csv('analisis_pedidos.csv')
-
-    return df_ingredients, df_procesado
+    return df, df_recom
 
 
 if __name__ == '__main__':
 
-    '''
-    Este programa analizará los pedidos de la empresa Maeven Pizzas 
-    a lo largo de la semana del 21 al 27 de diciembre de 2015. 
-    Una vez analizados,creará dos archivos .csv, uno con los ingredientes que 
-    se estima debería comprar para la siguiente semana, y otro con el análisis de los pedidos de la semana,
-    incluyendo en el mismo el tipo de pizza, sus ingredientes, la cantidad pedida por tamaños y la cantidad
-    de ingredientes necesarios (según las ponderaciones por tamaños)
+    print('\nProcedemos a calcular el calendario')
+    año_dic = crear_calendar()
+    
+    print('\nVamos a analizar los datos')
+    data = extract()
 
-    '''
-    df_pizzas,df_ptypes,df_orders,df_odetails,df_dict = extract()
-    df_procesado = transform(df_pizzas,df_ptypes,df_orders,df_odetails,df_dict)
-    df_ingredients,df_procesado = load(df_procesado)
+    df , tipos= transform(data,año_dic)
+    print('Se ha procesado el primer df')
+
+    load(df , tipos)
+
+
+        
+
 
