@@ -272,7 +272,7 @@ if __name__ == '__main__':
     df , tipos= transform(data,año_dic)
     print('Se ha procesado el primer df')
 
-    load(df , tipos)
+    df , df_recom = load(df , tipos)
 
 
         
